@@ -2,7 +2,7 @@
   "name": "sapilot",
   "displayName": "SAPilot",
   "description": "Use SAP AI Core models in VS Code Chat. Connect once, then choose a deployment from the model picker.",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "publisher": "sharma-so",
   "author": "Rahul Sharma",
   "license": "MIT",

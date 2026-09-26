@@ -54,7 +54,7 @@ class SapAiCoreProvider {
     if (!model) throw new Error('This SAP AI Core deployment is no longer available. Refresh the model picker.');
 
     const abortController = new AbortController();
-    const cancellation = cancellationToken.onCancellationRequested(() => abortController.abort());
+    const cancellation = bindCancellation(cancellationToken, abortController);
     try {
       const tools = model.toolCalling ? options.tools || [] : [];
       await this.sendChatRequest(model, convertMessages(messages), tools, progress, abortController.signal);
@@ -107,7 +107,7 @@ class SapAiCoreProvider {
     const apiUrl = assertSapHttpsUrl(config.apiUrl, 'AI Core base URL');
     const token = await this.getAccessToken(config, cancellationToken);
     const controller = new AbortController();
-    const cancellation = cancellationToken && cancellationToken.onCancellationRequested(() => controller.abort());
+    const cancellation = bindCancellation(cancellationToken, controller);
     try {
       const response = await fetch(`${apiUrl}/v2/lm/deployments?$top=10000&$skip=0`, {
         redirect: 'error',
@@ -130,7 +130,7 @@ class SapAiCoreProvider {
     let authUrl = assertSapHttpsUrl(config.authUrl, 'Auth URL');
     if (!authUrl.endsWith('/oauth/token')) authUrl += '/oauth/token';
     const abortController = new AbortController();
-    const cancellation = cancellationToken && cancellationToken.onCancellationRequested(() => abortController.abort());
+    const cancellation = bindCancellation(cancellationToken, abortController);
     try {
       const response = await fetch(`${authUrl}?grant_type=client_credentials`, {
         method: 'POST',
@@ -152,6 +152,20 @@ class SapAiCoreProvider {
       if (cancellation) cancellation.dispose();
     }
   }
+}
+
+function bindCancellation(source, controller) {
+  if (!source) return undefined;
+  if (typeof source.onCancellationRequested === 'function') {
+    return source.onCancellationRequested(() => controller.abort());
+  }
+  if (typeof source.addEventListener === 'function') {
+    const abort = () => controller.abort();
+    if (source.aborted) controller.abort();
+    else source.addEventListener('abort', abort, { once: true });
+    return { dispose: () => source.removeEventListener('abort', abort) };
+  }
+  return undefined;
 }
 
 function parseDeployments(payload, apiUrl, resourceGroup) {
