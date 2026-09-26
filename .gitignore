@@ -1,0 +1,4 @@
+*.vsix
+.couplet/
+.vscode/
+node_modules/

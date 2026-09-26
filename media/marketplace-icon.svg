@@ -1,0 +1,22 @@
+<!-- Source for media/icon.png, the Marketplace and extension-list icon.
+
+     Unlike media/icon.svg (which draws in currentColor and so follows the
+     editor theme) this one is rendered to a flat PNG and shown on backgrounds
+     nobody controls: the Marketplace web page is white, the extension list in
+     the editor is usually dark. A white mark therefore scored 1.00:1 on the
+     Marketplace — invisible — while looking fine everywhere else.
+
+     One flat grey has to survive both. #7e7e7e is the value with the best
+     worst case across the backgrounds this actually lands on: 4.06:1 on
+     Marketplace white, 3.80:1 on its highlighted row, and 3.77-4.37:1 on the
+     usual dark editor backgrounds. All above the 3:1 that non-text marks need,
+     without a background tile.
+
+     The mark spans (25,11)-(117,117) once its 8px stroke is counted, so it is
+     centred on (71,64) rather than on the canvas; the -7px shift recentres it. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="256" height="256">
+  <g transform="translate(-7,0)" fill="none" stroke="#7e7e7e" stroke-width="8" stroke-linecap="butt">
+    <path d="M29 15 L29 113 L113 113 L113 55 L64 55 L64 15 Z" stroke-linejoin="miter"/>
+    <line x1="47" y1="84" x2="90" y2="84"/>
+  </g>
+</svg>

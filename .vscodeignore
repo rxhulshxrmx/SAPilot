@@ -1,0 +1,6 @@
+.gitignore
+.vscode/**
+.couplet/**
+**/.couplet/**
+*.vsix
+**/*.map

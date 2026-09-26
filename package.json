@@ -1,0 +1,52 @@
+{
+  "name": "sapilot",
+  "displayName": "SAPilot",
+  "description": "Use SAP AI Core models in VS Code Chat. Connect once, then choose a deployment from the model picker.",
+  "version": "0.1.11",
+  "publisher": "sharma-so",
+  "author": "Rahul Sharma",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": ">=1.104.0"
+  },
+  "categories": ["AI", "Machine Learning"],
+  "keywords": ["SAP", "SAP AI Core", "chat models", "Claude", "Gemini", "Cohere"],
+  "main": "extension.js",
+  "activationEvents": [
+    "onLanguageModelChatProvider:sap-ai-core"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sap-ai-core",
+          "title": "SAPilot",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "sap-ai-core": [
+        {
+          "type": "webview",
+          "id": "sap-ai-core-chat.credentials",
+          "name": "Connection"
+        }
+      ]
+    },
+    "languageModelChatProviders": [
+      {
+        "vendor": "sap-ai-core",
+        "displayName": "SAP AI Core",
+        "managementCommand": "sap-ai-core-chat.configure"
+      }
+    ],
+    "commands": [
+      {
+        "command": "sap-ai-core-chat.configure",
+        "title": "SAPilot: Open Connection Settings"
+      }
+    ]
+  }
+}
