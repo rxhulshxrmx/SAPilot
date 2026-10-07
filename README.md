@@ -1,12 +1,14 @@
 # SAPilot
 
-Use SAP AI Core models in VS Code Chat.
+Use SAP AI Core models in GitHub Copilot Chat.
 
 ## Get started
 
-1. Install the extension and open **SAPilot** from the Activity Bar.
-2. Enter your service key values and select **Save and connect**.
-3. Open VS Code Chat and choose a model under **SAP AI Core**.
+1. Install the extension. SAPilot opens a short setup guide the first time it runs.
+2. Select **Connect to SAP AI Core** and enter your service key values.
+3. Open Copilot Chat and choose a running model under **SAP AI Core**.
+
+Click **SAPilot** in the bottom status bar to reopen setup. You can also use the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`) and run **SAPilot: Connect to SAP AI Core**.
 
 SAPilot discovers running chat deployments and selects the right API format for each model. It supports OpenAI-compatible Chat Completions, Claude, Bedrock Converse, Cohere Chat, and Gemini on Vertex AI. Non-chat deployments such as embeddings are not shown.
 

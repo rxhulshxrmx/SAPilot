@@ -8,6 +8,8 @@ const AUTH_URL = 'sap-ai-core-chat.authUrl';
 const API_URL = 'sap-ai-core-chat.apiUrl';
 const RESOURCE_GROUP = 'sap-ai-core-chat.resourceGroup';
 const DEFAULT_API_VERSION = '2024-10-21';
+const WELCOME_SHOWN_KEY = 'sap-ai-core-chat.welcomeShown';
+const WALKTHROUGH_ID = 'sharma-so.sapilot#sapAiCoreGettingStarted';
 
 class SapAiCoreProvider {
   constructor(context) {
@@ -89,7 +91,7 @@ class SapAiCoreProvider {
       body: JSON.stringify(request.body),
       signal
     });
-    if (!response.ok) throw new Error(`SAP AI Core returned ${response.status}: ${(await response.text()).slice(0, 1200)}`);
+    if (!response.ok) throw new Error(httpErrorMessage(response, 'SAP AI Core'));
     if (request.streaming) {
       if (!response.body) throw new Error('SAP AI Core returned an empty response.');
       await streamChatCompletion(response.body, progress, signal);
@@ -114,7 +116,7 @@ class SapAiCoreProvider {
         headers: { Authorization: `Bearer ${token}`, 'AI-Resource-Group': config.resourceGroup },
         signal: controller.signal
       });
-      if (!response.ok) throw new Error(`Could not list SAP AI Core deployments (${response.status}): ${(await response.text()).slice(0, 800)}`);
+      if (!response.ok) throw new Error(httpErrorMessage(response, 'SAP AI Core'));
       const payload = await response.json();
       this.modelCache = parseDeployments(payload, apiUrl, config.resourceGroup);
       this.modelCacheAt = Date.now();
@@ -140,7 +142,7 @@ class SapAiCoreProvider {
         },
         signal: abortController.signal
       });
-      if (!response.ok) throw new Error(`SAP OAuth token request failed (${response.status}): ${(await response.text()).slice(0, 800)}`);
+      if (!response.ok) throw new Error(httpErrorMessage(response, 'SAP sign-in'));
       const token = await response.json();
       if (!token.access_token) throw new Error('SAP OAuth response did not contain an access_token.');
       this.tokenCache = {
@@ -166,6 +168,20 @@ function bindCancellation(source, controller) {
     return { dispose: () => source.removeEventListener('abort', abort) };
   }
   return undefined;
+}
+
+function httpErrorMessage(response, service) {
+  const status = response.status;
+  if (status === 502 || status === 503 || status === 504) {
+    return `${service} is temporarily unavailable (HTTP ${status}). Try again in a moment.`;
+  }
+  if (service === 'SAP sign-in' && (status === 400 || status === 401 || status === 403)) {
+    return 'SAP could not sign you in. Check your Client ID, Client secret, and Auth URL.';
+  }
+  if (status === 401 || status === 403) {
+    return 'SAP denied access. Check your resource group and account permissions.';
+  }
+  return `${service} could not complete the request (HTTP ${status}). Check your connection details and try again.`;
 }
 
 function parseDeployments(payload, apiUrl, resourceGroup) {
@@ -320,28 +336,54 @@ async function getConnection(context) {
 }
 
 class CredentialsViewProvider {
-  constructor(context, provider) {
+  constructor(context, provider, statusBarItem) {
     this.context = context;
     this.provider = provider;
+    this.statusBarItem = statusBarItem;
   }
 
-  resolveWebviewView(view) {
-    view.webview.options = { enableScripts: true };
-    view.webview.html = credentialsHtml(view.webview);
-    view.webview.onDidReceiveMessage(async message => {
+  setStatus(text, tooltip) {
+    this.statusBarItem.text = text;
+    this.statusBarItem.tooltip = tooltip;
+  }
+
+  openPanel() {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.One);
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      'sap-ai-core-chat.connection',
+      'Connect SAP AI Core',
+      vscode.ViewColumn.One,
+      { enableScripts: true }
+    );
+    this.panel = panel;
+    panel.onDidDispose(() => { this.panel = undefined; });
+    panel.webview.html = credentialsHtml(panel.webview);
+    this.bindMessages(panel.webview);
+  }
+
+  bindMessages(webview) {
+    webview.onDidReceiveMessage(async message => {
       if (message.type === 'ready') {
-        await this.sendConfig(view.webview);
-        view.webview.postMessage({ type: 'status', state: 'idle', text: '' });
+        await this.sendConfig(webview);
+        webview.postMessage({ type: 'status', state: 'idle', text: '' });
       } else if (message.type === 'save') {
-        await this.save(view.webview, message.value || {});
+        await this.save(webview, message.value || {});
       } else if (message.type === 'clear') {
-        await this.clear(view.webview);
+        await this.clear(webview);
       }
     }, undefined, this.context.subscriptions);
   }
 
   async sendConfig(webview) {
     const value = await getConnection(this.context);
+    const configured = value.clientId && value.clientSecret && value.apiUrl && value.authUrl;
+    this.setStatus(
+      configured ? '$(check) SAPilot' : '$(plug) SAPilot',
+      configured ? 'SAPilot connection details are saved. Click to manage.' : 'Click to connect SAPilot to SAP AI Core.'
+    );
     webview.postMessage({
       type: 'config',
       value: {
@@ -364,14 +406,14 @@ class CredentialsViewProvider {
     const newSecret = String(value.clientSecret || '').trim();
     const currentSecret = await this.context.secrets.get(CLIENT_SECRET);
     if (!config.clientId || !config.apiUrl || !config.authUrl || (!newSecret && !currentSecret)) {
-      webview.postMessage({ type: 'status', state: 'error', text: 'Fill in the Client ID, Client secret, AI Core base URL, and Auth URL.' });
+      webview.postMessage({ type: 'status', state: 'error', text: 'Fill in Client ID, Client secret, AI Core base URL, and Auth URL.' });
       return;
     }
     try {
       config.apiUrl = assertSapHttpsUrl(config.apiUrl, 'AI Core base URL');
       config.authUrl = assertSapHttpsUrl(config.authUrl, 'Auth URL');
     } catch (error) {
-      webview.postMessage({ type: 'status', ok: false, text: error.message });
+      webview.postMessage({ type: 'status', state: 'error', text: error.message });
       return;
     }
     await this.context.globalState.update(CLIENT_ID, config.clientId);
@@ -393,6 +435,7 @@ class CredentialsViewProvider {
       return;
     }
     webview.postMessage({ type: 'status', state: 'testing', text: 'Testing…' });
+    this.setStatus('$(sync) SAPilot', 'SAPilot is checking the SAP AI Core connection.');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
@@ -403,9 +446,16 @@ class CredentialsViewProvider {
       const result = reply
         ? 'Connected and tested successfully. Open VS Code Chat and select an SAP AI Core model.'
         : 'Connected, but the reply was empty. Open VS Code Chat and select an SAP AI Core model.';
+      this.setStatus('$(check) SAPilot', result);
       webview.postMessage({ type: 'status', state: 'ok', text: result });
     } catch (error) {
-      const message = controller.signal.aborted ? 'Timed out after 30 seconds.' : error instanceof Error ? error.message : String(error);
+      const detail = controller.signal.aborted
+        ? 'SAP took too long to respond. Your details are saved; try again in a moment.'
+        : error instanceof Error && error.message === 'fetch failed'
+          ? 'Could not reach SAP. Check your internet connection and the URLs, then try again.'
+          : error instanceof Error ? error.message : String(error);
+      const message = controller.signal.aborted ? detail : `Your details are saved. ${detail}`;
+      this.setStatus('$(warning) SAPilot', message);
       webview.postMessage({ type: 'status', state: 'error', text: message });
     } finally {
       clearTimeout(timeout);
@@ -432,16 +482,17 @@ function credentialsHtml(webview) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 18px 16px 24px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
-  h2 { font-size: 1em; font-weight: 600; letter-spacing: -.01em; margin: 0 0 20px; }
+  body { max-width: 720px; margin: 0 auto; padding: 36px 28px 48px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); background: var(--vscode-editor-background); }
+  h2 { font-size: 1.4em; font-weight: 600; letter-spacing: -.01em; margin: 0 0 8px; }
+  .intro { color: var(--vscode-descriptionForeground); margin: 0 0 22px; line-height: 1.5; }
   .field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 15px; }
   label { font-size: .9em; color: var(--vscode-foreground); }
   input { width: 100%; min-height: 31px; padding: 6px 9px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, transparent)); border-radius: 5px; font: inherit; }
   input::placeholder { color: var(--vscode-input-placeholderForeground); opacity: .8; }
   input:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   button { font: inherit; cursor: pointer; }
-  #testConnectionBtn { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; margin-top: 2px; padding: 5px 12px; color: var(--vscode-foreground); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-widget-border, transparent); border-radius: 6px; font: inherit; font-size: .88em; text-transform: none; transition: background-color .12s ease; }
-  #testConnectionBtn:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground)); }
+  #testConnectionBtn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; margin-top: 2px; padding: 7px 16px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; border-radius: 4px; font: inherit; transition: background-color .12s ease; }
+  #testConnectionBtn:hover { background: var(--vscode-button-hoverBackground); }
   #testConnectionBtn:disabled { opacity: .55; cursor: default; }
   #connectionStatus { min-height: 1.4em; margin: 10px 0 0; font-size: .85em; line-height: 1.45; overflow-wrap: anywhere; }
   #connectionStatus.ok { color: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #89d185)); }
@@ -451,15 +502,18 @@ function credentialsHtml(webview) {
   #clear:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground)); }
   #clear[hidden] { display: none; }
   .hint { margin-top: 1px; color: var(--vscode-descriptionForeground); font-size: .82em; }
+  .success-note { color: var(--vscode-descriptionForeground); font-size: .9em; margin-top: 12px; }
 </style></head><body>
-  <h2>SAP AI Core credentials</h2>
+  <h2>Connect SAP AI Core</h2>
+  <p class="intro">Enter your SAP AI Core connection details once. They’ll be saved for next time.</p>
   <form id="form" novalidate>
-    <div class="field"><label for="clientId">Client ID</label><input id="clientId" placeholder="Enter AI Core Client ID..." autocomplete="off" required></div>
-    <div class="field"><label for="clientSecret">Client secret</label><input id="clientSecret" type="password" placeholder="Enter AI Core Client Secret..." autocomplete="new-password"><div class="hint" id="secretHint"></div></div>
-    <div class="field"><label for="apiUrl">AI Core base URL</label><input id="apiUrl" placeholder="Enter AI Core Base URL..." required></div>
-    <div class="field"><label for="authUrl">Auth URL</label><input id="authUrl" placeholder="Enter AI Core Auth URL..." required></div>
+    <div class="field"><label for="clientId">Client ID</label><input id="clientId" placeholder="Client ID" autocomplete="off" required></div>
+    <div class="field"><label for="clientSecret">Client secret</label><input id="clientSecret" type="password" placeholder="Client secret" autocomplete="new-password"><div class="hint" id="secretHint"></div></div>
+    <div class="field"><label for="apiUrl">AI Core URL</label><input id="apiUrl" placeholder="AI Core URL" required></div>
+    <div class="field"><label for="authUrl">Auth URL</label><input id="authUrl" placeholder="Auth URL" required></div>
     <div class="field"><label for="resourceGroup">Resource group</label><input id="resourceGroup" placeholder="default"></div>
     <button id="testConnectionBtn" type="submit">Save and connect</button>
+    <p class="success-note">Your secret is stored securely in VS Code.</p>
   </form>
   <div id="connectionStatus" role="status"></div>
   <button id="clear" type="button" hidden>Remove saved credentials</button>
@@ -487,13 +541,13 @@ function credentialsHtml(webview) {
       byId('resourceGroup').value = message.value.resourceGroup || 'default';
       byId('clientSecret').value = '';
       byId('clientSecret').required = !message.value.hasSecret;
-      byId('secretHint').textContent = message.value.hasSecret ? 'Secret is set. Re-enter it to change.' : '';
+      byId('secretHint').textContent = message.value.hasSecret ? 'Saved. Leave blank to keep it.' : '';
       byId('clear').hidden = !message.value.hasSecret;
     } else if (message.type === 'status') {
       byId('connectionStatus').textContent = message.text;
       byId('connectionStatus').className = message.state || '';
       byId('testConnectionBtn').disabled = message.state === 'testing';
-      byId('testConnectionBtn').textContent = 'Save and connect';
+      byId('testConnectionBtn').textContent = message.state === 'error' ? 'Try again' : 'Save and connect';
     }
   });
   vscode.postMessage({ type: 'ready' });
@@ -502,12 +556,33 @@ function credentialsHtml(webview) {
 
 function activate(context) {
   const provider = new SapAiCoreProvider(context);
-  const credentialsView = new CredentialsViewProvider(context, provider);
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBarItem.text = '$(plug) SAPilot';
+  statusBarItem.tooltip = 'Connect SAPilot to SAP AI Core.';
+  statusBarItem.command = 'sap-ai-core-chat.configure';
+  statusBarItem.show();
+  const credentialsView = new CredentialsViewProvider(context, provider, statusBarItem);
   context.subscriptions.push(
+    statusBarItem,
     vscode.lm.registerLanguageModelChatProvider(VENDOR, provider),
-    vscode.window.registerWebviewViewProvider('sap-ai-core-chat.credentials', credentialsView),
-    vscode.commands.registerCommand('sap-ai-core-chat.configure', () => vscode.commands.executeCommand('workbench.view.extension.sap-ai-core'))
+    vscode.commands.registerCommand('sap-ai-core-chat.configure', () => credentialsView.openPanel())
   );
+  void showWelcomeIfNeeded(context);
+}
+
+async function showWelcomeIfNeeded(context) {
+  if (context.globalState.get(WELCOME_SHOWN_KEY)) return;
+  const config = await getConnection(context);
+  if (config.clientId && config.clientSecret && config.apiUrl && config.authUrl) {
+    await context.globalState.update(WELCOME_SHOWN_KEY, true);
+    return;
+  }
+  try {
+    await vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH_ID, false);
+    await context.globalState.update(WELCOME_SHOWN_KEY, true);
+  } catch {
+    // The walkthrough remains available from VS Code's Get Started page.
+  }
 }
 
 function deactivate() {}

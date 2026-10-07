@@ -1,8 +1,8 @@
 {
   "name": "sapilot",
   "displayName": "SAPilot",
-  "description": "Use SAP AI Core models in VS Code Chat. Connect once, then choose a deployment from the model picker.",
-  "version": "0.1.12",
+  "description": "Add SAP AI Core models to GitHub Copilot Chat. Connect once, then choose a running deployment.",
+  "version": "0.1.16",
   "publisher": "sharma-so",
   "author": "Rahul Sharma",
   "license": "MIT",
@@ -14,27 +14,10 @@
   "keywords": ["SAP", "SAP AI Core", "chat models", "Claude", "Gemini", "Cohere"],
   "main": "extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onLanguageModelChatProvider:sap-ai-core"
   ],
   "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "sap-ai-core",
-          "title": "SAPilot",
-          "icon": "media/icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "sap-ai-core": [
-        {
-          "type": "webview",
-          "id": "sap-ai-core-chat.credentials",
-          "name": "Connection"
-        }
-      ]
-    },
     "languageModelChatProviders": [
       {
         "vendor": "sap-ai-core",
@@ -45,7 +28,38 @@
     "commands": [
       {
         "command": "sap-ai-core-chat.configure",
-        "title": "SAPilot: Open Connection Settings"
+        "title": "SAPilot: Connect to SAP AI Core"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "sapAiCoreGettingStarted",
+        "title": "Get started with SAPilot",
+        "description": "Connect SAP AI Core and use its models in GitHub Copilot Chat.",
+        "steps": [
+          {
+            "id": "connect",
+            "title": "Connect SAP AI Core",
+            "description": "Add your SAP AI Core connection details once. They are saved for next time.",
+            "media": {
+              "markdown": "resources/walkthrough/connect.md"
+            },
+            "completionEvents": [
+              "onCommand:sap-ai-core-chat.configure"
+            ]
+          },
+          {
+            "id": "chooseModel",
+            "title": "Choose a model in Copilot Chat",
+            "description": "Select a running SAP AI Core model from Chat’s model picker.",
+            "media": {
+              "markdown": "resources/walkthrough/choose-model.md"
+            },
+            "completionEvents": [
+              "onCommand:workbench.action.chat.open"
+            ]
+          }
+        ]
       }
     ]
   }
