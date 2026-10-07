@@ -567,7 +567,17 @@ function activate(context) {
     vscode.lm.registerLanguageModelChatProvider(VENDOR, provider),
     vscode.commands.registerCommand('sap-ai-core-chat.configure', () => credentialsView.openPanel())
   );
+  void updateStatusBarFromSavedConnection(context, statusBarItem);
   void showWelcomeIfNeeded(context);
+}
+
+async function updateStatusBarFromSavedConnection(context, statusBarItem) {
+  const config = await getConnection(context);
+  const configured = config.clientId && config.clientSecret && config.apiUrl && config.authUrl;
+  statusBarItem.text = configured ? '$(check) SAPilot' : '$(plug) SAPilot';
+  statusBarItem.tooltip = configured
+    ? 'SAP AI Core details are saved. Models reconnect automatically when selected in Copilot Chat. Click to manage.'
+    : 'Click to connect SAPilot to SAP AI Core.';
 }
 
 async function showWelcomeIfNeeded(context) {
