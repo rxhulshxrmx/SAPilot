@@ -31,7 +31,7 @@ class SapAiCoreProvider {
         name: model.name,
         family: model.modelName,
         version: model.version || '1.0.0',
-        maxInputTokens: 16000,
+        maxInputTokens: model.contextLength || 16000,
         maxOutputTokens: 4000,
         tooltip: `SAP AI Core · ${model.label}`,
         detail: `Resource group: ${model.resourceGroup}`,
@@ -111,14 +111,19 @@ class SapAiCoreProvider {
     const controller = new AbortController();
     const cancellation = bindCancellation(cancellationToken, controller);
     try {
-      const response = await fetch(`${apiUrl}/v2/lm/deployments?$top=10000&$skip=0`, {
-        redirect: 'error',
-        headers: { Authorization: `Bearer ${token}`, 'AI-Resource-Group': config.resourceGroup },
-        signal: controller.signal
-      });
+      const headers = { Authorization: `Bearer ${token}`, 'AI-Resource-Group': config.resourceGroup };
+      const [response, modelCatalog] = await Promise.all([
+        fetch(`${apiUrl}/v2/lm/deployments?$top=10000&$skip=0`, {
+          redirect: 'error', headers, signal: controller.signal
+        }),
+        fetchFoundationModelCatalog(apiUrl, headers, controller.signal)
+      ]);
       if (!response.ok) throw new Error(httpErrorMessage(response, 'SAP AI Core'));
       const payload = await response.json();
-      this.modelCache = parseDeployments(payload, apiUrl, config.resourceGroup);
+      this.modelCache = parseDeployments(payload, apiUrl, config.resourceGroup).map(model => ({
+        ...model,
+        contextLength: findContextLength(model, modelCatalog)
+      }));
       this.modelCacheAt = Date.now();
       return this.modelCache;
     } finally {
@@ -154,6 +159,33 @@ class SapAiCoreProvider {
       if (cancellation) cancellation.dispose();
     }
   }
+}
+
+async function fetchFoundationModelCatalog(apiUrl, headers, signal) {
+  try {
+    const response = await fetch(`${apiUrl}/v2/lm/scenarios/foundation-models/models`, {
+      redirect: 'error', headers, signal
+    });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return payload && Array.isArray(payload.resources) ? payload.resources : [];
+  } catch {
+    // Model discovery is supplemental: keep deployments available if this
+    // endpoint is unavailable or the service key cannot access it.
+    return [];
+  }
+}
+
+function findContextLength(deployment, catalog) {
+  const entry = catalog.find(model => String(model.name || '').toLowerCase() === deployment.modelName.toLowerCase());
+  if (!entry || !Array.isArray(entry.versions)) return undefined;
+  const versions = entry.versions;
+  const deployedVersion = versions.find(version => String(version.name || '').toLowerCase() === String(deployment.version || '').toLowerCase());
+  const selectedVersion = deployedVersion || (!deployment.version
+    ? versions.find(version => version.isLatest) || (versions.length === 1 ? versions[0] : undefined)
+    : undefined);
+  const contextLength = Number(selectedVersion && selectedVersion.contextLength);
+  return Number.isSafeInteger(contextLength) && contextLength > 0 ? contextLength : undefined;
 }
 
 function bindCancellation(source, controller) {
