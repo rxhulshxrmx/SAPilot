@@ -2,7 +2,7 @@
   "name": "sapilot",
   "displayName": "SAPilot",
   "description": "Add SAP AI Core models to GitHub Copilot Chat. Connect once, then choose a running deployment.",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "publisher": "sharma-so",
   "author": "Rahul Sharma",
   "license": "MIT",

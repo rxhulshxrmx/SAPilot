@@ -177,11 +177,15 @@ async function fetchFoundationModelCatalog(apiUrl, headers, signal) {
 }
 
 function findContextLength(deployment, catalog) {
-  const entry = catalog.find(model => String(model.name || '').toLowerCase() === deployment.modelName.toLowerCase());
+  const entry = catalog.find(model =>
+    String(model.model || model.name || '').toLowerCase() === deployment.modelName.toLowerCase());
   if (!entry || !Array.isArray(entry.versions)) return undefined;
   const versions = entry.versions;
-  const deployedVersion = versions.find(version => String(version.name || '').toLowerCase() === String(deployment.version || '').toLowerCase());
-  const selectedVersion = deployedVersion || (!deployment.version
+  const deploymentVersion = String(deployment.version || '').toLowerCase();
+  const deployedVersion = deploymentVersion && deploymentVersion !== 'latest'
+    ? versions.find(version => String(version.name || '').toLowerCase() === deploymentVersion)
+    : undefined;
+  const selectedVersion = deployedVersion || ((!deploymentVersion || deploymentVersion === 'latest')
     ? versions.find(version => version.isLatest) || (versions.length === 1 ? versions[0] : undefined)
     : undefined);
   const contextLength = Number(selectedVersion && selectedVersion.contextLength);
